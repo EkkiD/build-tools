@@ -15,6 +15,7 @@ result=$?
 if [ $result -eq 0 ]; then
     echo "Got the packed files"
     for ((i=3 ; i <= $# ; i++ )); do
+        echo "mv ./${!i} ./${!i}.old"
         mv ./${!i} ./${!i}.old
     done
 else

@@ -15,7 +15,7 @@ unpackResult=$?
 # if these steps succeed, add ".old" to the suffixes
 # if these steps fail, go get the files individually.
 
-if [ $getResult -eq 0 ] && [$unpackResult -eq 0]; then
+if [ $getResult -eq 0 ] && [ $unpackResult -eq 0 ]; then
     echo "Got the packed files"
     for ((i=3 ; i <= $# ; i++ )); do
         echo "mv ./${!i} ./${!i}.old"

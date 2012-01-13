@@ -4,6 +4,8 @@
 # $2 : compressed file expected
 # $3 - $N : list of files expected in case compressed files doesn't exist
 
+set +e
+
 wget -O wget_unpack.tar.gz ${1}/${2}
 
 getResult=$?
@@ -11,6 +13,8 @@ getResult=$?
 tar -xzvf wget_unpack.tar.gz
 
 unpackResult=$?
+
+set -e
 
 # if these steps succeed, add ".old" to the suffixes
 # if these steps fail, go get the files individually.

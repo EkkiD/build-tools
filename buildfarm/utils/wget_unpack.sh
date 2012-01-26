@@ -8,6 +8,13 @@ MY_DIR=$(pwd)
 popd &> /dev/null
 retry="$MY_DIR/retry.py -s 1 -r 2"
 
+cleanup(){
+    if [ -e wget.err ]; then
+        rm wget.err
+    fi
+    rm wget_unpack.tar.gz
+}
+
 usage(){
     echo "Usage: wget_unpack.sh URL EXPECTED_PACK FILE_LIST..."
     echo  "        URL:             url where files are located"
@@ -21,7 +28,7 @@ usage(){
 set +e
 
 #stop the attempts if we get a 404, we will try something else in that case
-${retry} --stderr-regexp 404 --fail-if-match wget -O wget_unpack.tar.gz ${1}/${2}
+${retry}  wget -O wget_unpack.tar.gz ${1}/${2}
 
 getResult=$?
 
@@ -29,7 +36,6 @@ tar -xzvf wget_unpack.tar.gz
 
 unpackResult=$?
 
-set -e
 
 # if these steps succeed, move the files to their target filenames
 # if these steps fail, go get the files individually.
@@ -43,6 +49,7 @@ if [ $getResult -eq 0 ] && [ $unpackResult -eq 0 ]; then
 
         if [ -z "$front" ] || [ -z "$back" ]; then
             usage
+            cleanup
             exit 1
         fi
 
@@ -61,7 +68,20 @@ else
             exit 1
         fi
 
-        ${retry} --stderr-regexp 404 --fail-if-match wget -O ${back} ${1}/${front}
+        ${retry}  wget -O ${back} ${1}/${front} 2> wget.err
+        getResult=$?
+        if [ $getResult -ne 0 ]; then
+            grep -q 404 wget.err
+            if [ $? -eq 0 ]; then
+                echo "404 ${front} was not found, this should not be an error"
+            else
+                cat wget.err
+                cleanup
+                exit 1
+            fi
+        fi
     done
 fi
-rm wget_unpack.tar.gz
+
+set -e
+cleanup

@@ -36,7 +36,7 @@ if __name__ == '__main__':
         for option, value in config.items('signscript'):
             options.ensure_value(option, value)
 
-    logging.basicConfig(level=options.loglevel, format="%(asctime)s - %(message)s")
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(message)s")
 
     if len(args) != 4:
         parser.error("Incorrect number of arguments")
@@ -68,5 +68,11 @@ if __name__ == '__main__':
             parser.error("mar_cmd is required when format is mar")
         safe_unlink(tmpfile)
         mar_signfile(inputfile, tmpfile, options.mar_cmd, options.fake, passphrase)
+    elif format_ ==".tar"
+        log.debug("We need to unpack here")
+        # Call unpack
+        # Call mac_signfile
+        # Repack
+        # Manifests?
 
     os.rename(tmpfile, destfile)

@@ -761,3 +761,98 @@ def mar_signfile(inputfile, outputfile, mar_cmd, fake=False, passphrase=None):
         data = stdout.read()
         log.exception(data)
         raise
+
+def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False):
+    basename = os.path.basename(filename)
+    dirname = os.path.dirname(filename)
+    stdout = tempfile.TemporaryFile()
+    command = ['codesign',
+        '-s', signing_identity,
+        '--keychain', keydir,
+        '--resource-rules', code_resources,
+        basename]
+    try:
+        check_call(command, cwd=dirname, stdout=stdout, stderr=STDOUT)
+        # should produce same result if we are on a 10.5/10.6 machine
+        if os.path.exists(os.path.join(filename, 'Contents/CodeResources')) and \
+           not os.path.isdir(os.path.join(filename, 'Contents/_CodeSignature')):
+            os.mkdir(os.path.join(filename, 'Contents/_CodeSignature'))
+            os.rename(
+                os.path.join(filename, 'Contents/CodeResources'),
+                os.path.join(filename, 'Contents/_CodeSignature/CodeResources'))
+            os.symlink(
+                os.path.join(filename, 'Contents/_CodeSignature/CodeResources'),
+                os.path.join(filename, 'Contents/CodeResources'))
+    except:
+        stdout.seek(0)
+        data = stdout.read()
+        log.exception(data)
+        raise
+
+
+def unpackdmg(dmgfile, destdir):
+    """Unpack the given dmgfile into destdir, using hdiutil"""
+    nullfd = open(os.devnull, "w")
+    dmgfile = os.path.abspath(dmgfile)
+    tmpdir = tempfile.mkdtemp()
+    try:
+        check_call([INSTALLDMG, dmgfile, tmpdir, destdir], stdout=nullfd)
+        #remove symlink that gets re-created during repack
+        check_call(['rm', '-f', ' '], cwd=destdir)
+    except:
+        log.exception("Error unpacking dmg %s to %s", dmgfile, destdir)
+        raise
+    nullfd.close()
+
+def packdmg(dmgfile, srcdir, volname='Firefox'):
+    """Recreate the files in srcdir into the given dmgfile,
+    requires pkg-dmg script from hg repo"""
+
+    command = [PKG_DMG,
+        '--source', srcdir,
+        '--target', dmgfile,
+        '--volname', volname,
+        '--symlink', "/Applications:/ ",
+        ]
+    try:
+        check_call(command)
+    except:
+        log.exception("Error packing %s into %s", os.path.abspath(srcdir), os.path.abspath(dmgfile))
+        raise
+
+def generateCodeResourcesFile(files, output_file,
+        template="CodeResources.template"):
+    """ Generate the XML rules for signing a mac package based on three
+    internal functions omit_file, optional_file and include_file """
+    plist = open(template, "r").readlines()
+    _omitted_dirs = [
+        'Contents/MacOS/extensions',
+        'Contents/MacOS/distribution',
+        'Contents/MacOS/updates',
+        ]
+    _omitted_files = [
+        'Contents/MacOS/active-update.xml',
+        'Contents/MacOS/mozilla.cfg',
+        'Contents/MacOS/updates.xml',
+        ]
+    filtered_files = [f for f in files
+        if not any([True for d in _omitted_dirs if d in f]) and \
+           not any([True for of in _omitted_files if of in f])]
+
+    for filename in filtered_files:
+        plist.append("<key>^%s$</key>\n" %
+            filename[filename.find('Contents/'):].lstrip("Contents/"))
+        plist.append("<true/>\n")
+    # Add specific rules for omitted files/dirs
+    for dirname in _omitted_dirs:
+        plist.append("<key>^%s/.*</key>" % dirname.lstrip("Contents/"))
+        plist.append("<dict>\n<key>omit</key>\n<true/>\n</dict>\n")
+
+    for filename in _omitted_files:
+        plist.append("<key>^%s$</key>" % filename.lstrip("Contents/"))
+        plist.append("<dict>\n<key>omit</key>\n<true/>\n</dict>\n")
+
+    # close the rules and plist dict
+    plist.append('</dict>\n</dict>\n</plist>\n')
+    open(output_file, "w").writelines(plist)
+

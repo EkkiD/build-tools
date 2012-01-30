@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 
 SEVENZIP = os.environ.get('SEVENZIP', '7z')
 MAR = os.environ.get('MAR', 'mar')
+TAR = os.environ.get('TAR', 'tar')
 
 def _noumask():
     # Utility function to set a umask of 000
@@ -313,12 +314,40 @@ def packmar(marfile, srcdir):
         raise
     nullfd.close()
 
+def unpacktar(tarfile, destdir):
+    """ Unpack given tarball into the specified dir """
+    nullfd = open(os.devnull, "w")
+    tarfile = cygpath(os.path.abspath(tarfile))
+    log.debug("unpack tar %s into %s", tarfile, destdir)
+    try:
+        check_call([TAR, '-xf', tarfile], cwd=destdir, stdout=nullfd, preexec_fn=_noumask)
+    except:
+        log.exception("Error unpacking tar file %s to %s", tarfile, destdir)
+        raise
+    nullfd.close()
+
+def packtar(tarfile, srcdir):
+    """ Pack a tar file from the given srcdir """
+    nullfd = open(os.devnull, "w")
+    files = [f[len(srcdir)+1:] for f in findfiles(srcdir)]
+    tarfile = cygpath(os.path.abspath(tarfile))
+    log.debug("pac tar %s from folder  %s with files " , tarfile, srcdir)
+    log.debug( files)
+    try:
+        check_call([TAR, '-cf', tarfile] + files, cwd=srcdir, stdout=nullfd, preexec_fn=_noumask)
+    except:
+        log.exception("Error unpacking tar file %s to %s", tarfile, srcdir)
+        raise
+    nullfd.close()
+
 def unpackfile(filename, destdir):
     """Unpack a mar or exe into destdir"""
     if filename.endswith(".mar"):
         return unpackmar(filename, destdir)
     elif filename.endswith(".exe"):
         return unpackexe(filename, destdir)
+    elif filename.endswith(".tar"):
+        return unpacktar(filename, destdir)
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
@@ -329,10 +358,12 @@ def packfile(filename, srcdir):
         return packmar(filename, srcdir)
     elif filename.endswith(".exe"):
         return packexe(filename, srcdir)
+    elif filename.endswith(".tar"):
+        return packtar(filename, destdir)
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
-def shouldSign(filename):
+def shouldSign(filename, platform='win', product='FirefoxNightly'):
     """Returns True if filename should be signed."""
     # These should already be signed by Microsoft.
     _dont_sign = [
@@ -342,8 +373,13 @@ def shouldSign(filename):
             ]
     ext = os.path.splitext(filename)[1]
     b = os.path.basename(filename)
-    if ext in ('.dll', '.exe') and not any(fnmatch.fnmatch(b, p) for p in _dont_sign):
-        return True
+    if platform == 'mac':
+        product = product + '.app'
+        if b == product:
+            return True
+    else:
+        if ext in ('.dll', '.exe') and not any(fnmatch.fnmatch(b, p) for p in _dont_sign):
+            return True
     return False
 
 def getChkFile(filename):
@@ -767,7 +803,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
     dirname = os.path.dirname(filename)
     stdout = tempfile.TemporaryFile()
     command = ['codesign',
-        '-s', signing_identity,
+        '-s', signing_identity, '-fv',
         '--keychain', keydir,
         '--resource-rules', code_resources,
         basename]
@@ -789,39 +825,72 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
         log.exception(data)
         raise
 
+# Old code, does it work?
+def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, fake=False, passphrase=None):
+    """ Sign a mac `pkgfile` (installer dmg or mar) , putting results into `dstfile`.
 
-def unpackdmg(dmgfile, destdir):
-    """Unpack the given dmgfile into destdir, using hdiutil"""
-    nullfd = open(os.devnull, "w")
-    dmgfile = os.path.abspath(dmgfile)
+    If `compressed` is True, then the contents of pkgfile are bz2 compressed
+    and should be decompressed before signing. All compressed files will
+    be de-compressed, signed as an App-Bundle, and subsequently repacked
+    into a mar so that we don't break the code signature. """
+    # Keep track of our output in a list here, and we can output everything
+    # when we're done This is to avoid interleaving the output from
+    # multiple processes.
+    logs = []
+    logs.append("Repacking %s to %s" % (pkgfile, dstfile))
+
     tmpdir = tempfile.mkdtemp()
+    filename = os.path.basename(pkgfile)
     try:
-        check_call([INSTALLDMG, dmgfile, tmpdir, destdir], stdout=nullfd)
-        #remove symlink that gets re-created during repack
-        check_call(['rm', '-f', ' '], cwd=destdir)
+        # Unpack it
+        logs.append("Unpacking %s to %s" % (pkgfile, tmpdir))
+        unpacktar(pkgfile, tmpdir)
+        # Fatten the mar contents into an app bundle for signing
+#        if compressed:
+#            for f in findfiles(tmpdir):
+#                bunzip2(f)
+#            pkg_tmpdir = tempfile.mkdtemp()
+#            os.rename(tmpdir, os.path.join(pkg_tmpdir, "%s.app" % options.product.title()))
+#            tmpdir = pkg_tmpdir
+        generateCodeResourcesFile(findfiles(tmpdir), code_resources)
+
+        for macdir in finddirs(tmpdir):
+            #if shouldSign(macdir, 'mac', options.product):
+            log.debug('Checking if we should sign %s', macdir)
+            if shouldSign(macdir, 'mac'):
+                log.debug('Signing %s', macdir)
+                dmg_signfile(macdir, keydir, mac_id, code_resources)
+
+        #if compressed:
+        if False:
+            # Put everything back where it was, and add the newly created
+            # CodeResources artifacts to the update manifest
+            for f in findfiles(tmpdir):
+                if os.path.basename(f) == 'update.manifest':
+                    update_manifest = open("%s.out" % f, "w")
+                    update_manifest.write('add "Contents/CodeResources"\n')
+                    update_manifest.write('add "Contents/_CodeSignature/CodeResources"\n')
+                    update_manifest.write( open(f, "r", True).read() )
+                    update_manifest.close()
+                    shutil.copymode(f, "%s.out" % f)
+                    os.unlink(f)
+                    os.rename("%s.out" % f, f)
+                bzip2(f)
+            tmpdir = os.path.join(tmpdir, "%s.app" % options.product.title())
+
+        # Repack it
+        logs.append("Packing %s" % dstfile)
+        packtar(dstfile, tmpdir)
+        return 1, 0, 1
     except:
-        log.exception("Error unpacking dmg %s to %s", dmgfile, destdir)
-        raise
-    nullfd.close()
+        log.exception("Error signing %s", pkgfile)
+        return False
+    finally:
+        # Clean up after ourselves, and output our logs
+        shutil.rmtree(tmpdir)
+        log.info("\n  ".join(logs))
 
-def packdmg(dmgfile, srcdir, volname='Firefox'):
-    """Recreate the files in srcdir into the given dmgfile,
-    requires pkg-dmg script from hg repo"""
-
-    command = [PKG_DMG,
-        '--source', srcdir,
-        '--target', dmgfile,
-        '--volname', volname,
-        '--symlink', "/Applications:/ ",
-        ]
-    try:
-        check_call(command)
-    except:
-        log.exception("Error packing %s into %s", os.path.abspath(srcdir), os.path.abspath(dmgfile))
-        raise
-
-def generateCodeResourcesFile(files, output_file,
-        template="CodeResources.template"):
+def generateCodeResourcesFile(files, output_file, template="CodeResources.template"):
     """ Generate the XML rules for signing a mac package based on three
     internal functions omit_file, optional_file and include_file """
     plist = open(template, "r").readlines()

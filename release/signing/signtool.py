@@ -103,7 +103,7 @@ def main():
 
     # Handle format
     formats = []
-    allowed_formats = ("signcode", "gpg", "mar")
+    allowed_formats = ("signcode", "gpg", "mar", "dmg" )
     for fmt in options.formats:
         if "," in fmt:
             for fmt in fmt.split(","):

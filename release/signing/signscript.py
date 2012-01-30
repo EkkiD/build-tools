@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """%prog [options] format inputfile outputfile inputfilename"""
-from signing import copyfile, signfile, shouldSign, gpg_signfile, safe_unlink, mar_signfile
+from signing import copyfile, signfile, shouldSign, gpg_signfile, safe_unlink, mar_signfile, dmg_signpackage
 import os
 import logging
 import sys
@@ -22,6 +22,10 @@ if __name__ == '__main__':
             help="where MozAuthenticode.spc, MozAuthenticode.spk can be found")
     parser.add_option("--gpgdir", dest="gpg_homedir",
             help="where the gpg keyrings are")
+    parser.add_option("--mac_id", dest="mac_id",
+            help="the mac signing identity")
+    parser.add_option("--dmgkeydir", dest="dmg_keydir",
+            help="the mac signing keydir")
     parser.add_option("--fake", dest="fake", action="store_true",
             help="do fake signing")
     parser.add_option("-c", "--config", dest="configfile",
@@ -68,8 +72,17 @@ if __name__ == '__main__':
             parser.error("mar_cmd is required when format is mar")
         safe_unlink(tmpfile)
         mar_signfile(inputfile, tmpfile, options.mar_cmd, options.fake, passphrase)
-    elif format_ ==".tar"
-        log.debug("We need to unpack here")
+    elif format_ == "dmg":
+        logging.debug(" We need to unpack inputfile %s here", inputfile)
+        if not options.dmg_keydir:
+            parser.error("dmg_keydir required when format is dmg")
+        if not options.mac_id:
+            parser.error("mac_id required when format is dmg")
+        if not options.code_resources:
+            parser.error("code_resources required when format is dmg")
+        tmpfile = tmpfile 
+        safe_unlink(tmpfile)
+        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.code_resources,  options.fake, passphrase)
         # Call unpack
         # Call mac_signfile
         # Repack

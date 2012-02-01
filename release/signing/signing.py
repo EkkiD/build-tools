@@ -363,7 +363,7 @@ def packfile(filename, srcdir):
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
-def shouldSign(filename, platform='win', product='FirefoxNightly'):
+def shouldSign(filename, platform='win', product='firefox'):
     """Returns True if filename should be signed."""
     # These should already be signed by Microsoft.
     _dont_sign = [
@@ -471,6 +471,7 @@ def signfile(filename, keydir, fake=False, passphrase=None):
 def getfile(baseurl, filehash, format_):
     url = "%s/sign/%s/%s" % (baseurl, format_, filehash)
     log.debug("%s: GET %s", filehash, url)
+    log.debug("GETFILE")
     r = urllib2.Request(url)
     return urllib2.urlopen(r)
 
@@ -589,7 +590,9 @@ def remote_signfile(options, url, filename, fmt, token, dest=None):
                     nonce = open(options.noncefile, 'rb').read()
                 except IOError:
                     nonce = ""
-                req = uploadfile(url, filename, fmt, token, nonce=nonce)
+                if options.product == None:
+                    log.debug("OPTIONS.PRODUCT IS NONE")
+                req = uploadfile(url, filename, fmt, token, nonce=nonce, product=options.product)
                 nonce = req.info()['X-Nonce']
                 open(options.noncefile, 'wb').write(nonce)
             except urllib2.HTTPError, e:
@@ -690,14 +693,19 @@ def buildValidatingOpener(ca_certs):
     opener = urllib2.build_opener(https_handler)
     urllib2.install_opener(opener)
 
-def uploadfile(baseurl, filename, format_, token, nonce):
+def uploadfile(baseurl, filename, format_, token, nonce, product):
     """Uploads file (given by `filename`) to server at `baseurl`.
 
     `sesson_key` and `nonce` are string values that get passed as POST
     parameters.
     """
+
+    log.debug("UPLOADFILE")
+
     from poster.encode import multipart_encode
     filehash = sha1sum(filename)
+    if product == None:
+        log.debug("PRODUCT IS NONE")
 
     try:
         fp = open(filename, 'rb')
@@ -708,6 +716,7 @@ def uploadfile(baseurl, filename, format_, token, nonce):
                 'filename': os.path.basename(filename),
                 'token': token,
                 'nonce': nonce,
+                'product': product,
                 }
 
         datagen, headers = multipart_encode(params)
@@ -826,7 +835,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
         raise
 
 # Old code, does it work?
-def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, fake=False, passphrase=None):
+def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, fake=False, passphrase=None):
     """ Sign a mac `pkgfile` (installer dmg or mar) , putting results into `dstfile`.
 
     If `compressed` is True, then the contents of pkgfile are bz2 compressed
@@ -855,28 +864,30 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, fake=False
         generateCodeResourcesFile(findfiles(tmpdir), code_resources)
 
         for macdir in finddirs(tmpdir):
-            #if shouldSign(macdir, 'mac', options.product):
             log.debug('Checking if we should sign %s', macdir)
-            if shouldSign(macdir, 'mac'):
+            if shouldSign(macdir, 'mac', product):
+            #if shouldSign(macdir, 'mac'):
                 log.debug('Signing %s', macdir)
                 dmg_signfile(macdir, keydir, mac_id, code_resources)
 
-        #if compressed:
-        if False:
-            # Put everything back where it was, and add the newly created
-            # CodeResources artifacts to the update manifest
-            for f in findfiles(tmpdir):
-                if os.path.basename(f) == 'update.manifest':
-                    update_manifest = open("%s.out" % f, "w")
-                    update_manifest.write('add "Contents/CodeResources"\n')
-                    update_manifest.write('add "Contents/_CodeSignature/CodeResources"\n')
-                    update_manifest.write( open(f, "r", True).read() )
-                    update_manifest.close()
-                    shutil.copymode(f, "%s.out" % f)
-                    os.unlink(f)
-                    os.rename("%s.out" % f, f)
-                bzip2(f)
-            tmpdir = os.path.join(tmpdir, "%s.app" % options.product.title())
+
+        # Put everything back where it was, and add the newly created
+        # CodeResources artifacts to the update manifest
+#        for f in findfiles(tmpdir):
+#            updated = False
+#            if os.path.basename(f) == 'update.manifest':
+#                update_manifest = open("%s.out" % f, "w")
+#                update_manifest.write('add "Contents/CodeResources"\n')
+#                update_manifest.write('add "Contents/_CodeSignature/CodeResources"\n')
+#                update_manifest.write( open(f, "r", True).read() )
+#                update_manifest.close()
+#                shutil.copymode(f, "%s.out" % f)
+#                os.unlink(f)
+#                os.rename("%s.out" % f, f)
+#                updated = True
+#        log.debug("%s Successfully updated manifest", updated)
+#        log.debug("join %s.app", product)
+#        tmpdir = os.path.join(tmpdir, "%s.app" % product)
 
         # Repack it
         logs.append("Packing %s" % dstfile)

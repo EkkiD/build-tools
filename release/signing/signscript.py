@@ -42,10 +42,10 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(message)s")
 
-    if len(args) != 4:
+    if len(args) != 5:
         parser.error("Incorrect number of arguments")
 
-    format_, inputfile, destfile, filename = args
+    format_, inputfile, destfile, filename, product = args
 
     tmpfile = destfile + ".tmp"
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
             parser.error("code_resources required when format is dmg")
         tmpfile = tmpfile 
         safe_unlink(tmpfile)
-        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.code_resources,  options.fake, passphrase)
+        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.code_resources, product, options.fake, passphrase)
         # Call unpack
         # Call mac_signfile
         # Repack

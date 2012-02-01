@@ -100,7 +100,7 @@ def safe_copyfile(src, dest):
     shutil.copystat(src, tmpname)
     os.rename(tmpname, dest)
 
-def run_signscript(cmd, inputfile, outputfile, filename, format_, passphrase=None, max_tries=5):
+def run_signscript(cmd, inputfile, outputfile, filename, format_, product, passphrase=None, max_tries=5):
     """Run the signing script `cmd`, passing the inputfile, outputfile,
     original filename and format.
 
@@ -116,7 +116,7 @@ def run_signscript(cmd, inputfile, outputfile, filename, format_, passphrase=Non
     else:
         cmd = cmd[:]
 
-    cmd.extend((format_, inputfile, outputfile, filename))
+    cmd.extend((format_, inputfile, outputfile, filename, product))
     output = open(outputfile + '.out', 'wb')
     max_time = 10
     tries = 0
@@ -185,10 +185,10 @@ class Signer(object):
         self.workers = []
         self.queue = queue.Queue()
 
-    def signfile(self, filehash, filename, format_):
+    def signfile(self, filehash, filename, format_, product):
         assert not self.stopped
         e = Event()
-        item = (filehash, filename, format_, e)
+        item = (filehash, filename, format_,product,  e)
         log.debug("Putting %s on the queue", item)
         self.queue.put(item)
         self._start_worker()
@@ -233,8 +233,8 @@ class Signer(object):
                     log.debug("no items, exiting")
                     break
 
-                filehash, filename, format_, e = item
-                log.info("Signing %s (%s - %s)", filename, format_, filehash)
+                filehash, filename, format_, product, e = item
+                log.info("Signing %s (%s - %s) %s", filename, format_, filehash, product)
 
                 inputfile = os.path.join(self.inputdir, filehash)
                 outputfile = os.path.join(self.outputdir, format_, filehash)
@@ -244,7 +244,7 @@ class Signer(object):
                     os.makedirs(os.path.join(self.outputdir, format_))
 
                 retval = run_signscript(self.signcmd, inputfile, outputfile,
-                        filename, format_, self.passphrases.get(format_))
+                        filename, format_, product, self.passphrases.get(format_))
 
                 if retval != 0:
                     if os.path.exists(logfile):
@@ -508,9 +508,9 @@ class SigningServer:
                 log.debug("Deleting expired token %s", token)
                 self.delete_token(token)
 
-    def submit_file(self, filehash, filename, format_):
+    def submit_file(self, filehash, filename, format_, product):
         assert (filehash, format_) not in self.pending
-        e = self.signer.signfile(filehash, filename, format_)
+        e = self.signer.signfile(filehash, filename, format_, product)
         self.pending[(filehash, format_)] = e
 
     def process_messages(self):
@@ -520,14 +520,15 @@ class SigningServer:
             try:
                 if msg[0] == 'errors':
                     item, txt = msg[1:]
-                    filehash, filename, format_, e = item
+                    filehash, filename, format_, product, e = item
                     del self.pending[filehash, format_]
                 elif msg[0] == 'done':
                     item, outputhash = msg[1:]
-                    filehash, filename, format_, e = item
+                    filehash, filename, format_, product, e = item
                     del self.pending[filehash, format_]
                     # Remember the filename for the output file too
                     self.save_filename(outputhash, filename)
+                    self.save_productname(outputhash, product)
                 else:
                     log.error("Unknown message type: %s", msg)
             except:
@@ -550,6 +551,22 @@ class SigningServer:
         fd, tmpname = tempfile.mkstemp(dir=self.unsigned_dir)
         fp = os.fdopen(fd, 'wb')
         fp.write(filename)
+        fp.close()
+        os.rename(tmpname, filename_fn)
+
+    def get_productname(self, filehash):
+        try:
+            filename_fn = os.path.join(self.unsigned_dir, filehash + ".pr")
+            os.utime(filename_fn, None)
+            return open(filename_fn, 'rb').read()
+        except OSError:
+            return None
+
+    def save_productname(self, filehash, product):
+        filename_fn = os.path.join(self.unsigned_dir, filehash + ".pr")
+        fd, tmpname = tempfile.mkstemp(dir=self.unsigned_dir)
+        fp = os.fdopen(fd, 'wb')
+        fp.write(product)
         fp.close()
         os.rename(tmpname, filename_fn)
 
@@ -635,8 +652,9 @@ class SigningServer:
                     safe_unlink(fn)
                 else:
                     filename = self.get_filename(filehash)
+                    product = self.get_productname(filehash)
                     if filename:
-                        self.submit_file(filehash, filename, format_)
+                        self.submit_file(filehash, filename, format_, product)
                         log.info("File is pending, come back soon!")
                         headers.append( ('X-Pending', 'True') )
                     else:
@@ -652,6 +670,7 @@ class SigningServer:
         assert format_ in self.formats
         filehash = values['sha1']
         filename = values['filename']
+        product = values['product']
         log.info("Request to %s sign %s (%s) from %s", format_, filename, filehash, environ['REMOTE_ADDR'])
         fn = os.path.join(self.unsigned_dir, filehash)
         headers = [('X-Nonce', next_nonce)]
@@ -713,8 +732,9 @@ class SigningServer:
 
         # Good to go!  Rename the temporary filename to the real filename
         self.save_filename(filehash, filename)
+        self.save_productname(filehash, product)
         os.rename(tmpname, fn)
-        self.submit_file(filehash, filename, format_)
+        self.submit_file(filehash, filename, format_, product)
         start_response("202 Accepted", headers)
         self.uploads += 1
         return ""
@@ -958,7 +978,7 @@ if __name__ == '__main__':
             tmpdir = tempfile.mkdtemp()
             dst = os.path.join(tmpdir, os.path.basename(src))
             shutil.copyfile(src, dst)
-            if 0 != run_signscript(config.get('signing', 'signscript'), src, dst, src, format_, passphrase, max_tries=2):
+            if 0 != run_signscript(config.get('signing', 'signscript'), src, dst, src, format_, 'test', passphrase, max_tries=2):
                 log.error("Bad passphrase: %s", open(dst + ".out").read())
                 assert False
             log.info("%s passphrase OK", format_)

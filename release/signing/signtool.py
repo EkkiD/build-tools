@@ -9,10 +9,13 @@ import sys, site
 site.addsitedir(os.path.join(os.path.dirname(__file__), "../../lib/python"))
 
 import logging
-from signing import remote_signfile, find_files, buildValidatingOpener
+from signing import remote_signfile, find_files, buildValidatingOpener, packtar, unpacktar
+from subprocess import check_call
 log = logging.getLogger(__name__)
 
 import pefile
+
+TAR = os.environ.get('TAR', 'tar')
 
 def is_authenticode_signed(filename):
     """Returns True if the file is signed with authenticode"""
@@ -147,10 +150,17 @@ def main():
     token = open(options.tokenfile, 'rb').read()
 
     for fmt in formats:
+
         log.debug("doing %s signing", fmt)
-        files = find_files(options, args)
+        files = []
+        if fmt == "dmg":
+            for fd in args:
+                packtar_app(fd+'.tar', [fd])
+                files.append(fd+'.tar')
+        else:
+            files = find_files(options, args)
+
         for f in files:
-            log.debug("%s", f)
             log.debug("checking %s for signature...", f)
             if fmt == 'signcode' and is_authenticode_signed(f):
                 log.info("Skipping %s because it looks like it's already signed", f)
@@ -170,6 +180,18 @@ def main():
             else:
                 log.error("Failed to sign %s with %s", f, fmt)
                 sys.exit(1)
+
+        if fmt == "dmg":
+            for fd in args:
+                log.debug("unpacking %s", fd)
+                unpacktar(fd+'.tar', os.getcwd())
+                os.unlink(fd+'.tar')
+                
+
+def packtar_app(tarfile, files):
+    """ Pack a tar with the list of files, in the current dir"""
+    packtar(tarfile, files, os.getcwd())
+
 
 if __name__ == '__main__':
     main()

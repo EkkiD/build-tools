@@ -83,9 +83,5 @@ if __name__ == '__main__':
         tmpfile = tmpfile 
         safe_unlink(tmpfile)
         dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.code_resources, product, options.fake, passphrase)
-        # Call unpack
-        # Call mac_signfile
-        # Repack
-        # Manifests?
 
     os.rename(tmpfile, destfile)

@@ -326,19 +326,24 @@ def unpacktar(tarfile, destdir):
         raise
     nullfd.close()
 
-def packtar(tarfile, srcdir):
-    """ Pack a tar file from the given srcdir """
-    nullfd = open(os.devnull, "w")
+def tar_dir(tarfile, srcdir):
+    """ Pack a tar file using all the files in the given srcdir """
     files = [f[len(srcdir)+1:] for f in findfiles(srcdir)]
+    packtar(tarfile, files, srcdir)
+    
+def packtar(tarfile, files, srcdir):
+    """ Pack the given files into a tar, setting cwd = srcdir"""
+    nullfd = open(os.devnull, "w")
     tarfile = cygpath(os.path.abspath(tarfile))
-    log.debug("pac tar %s from folder  %s with files " , tarfile, srcdir)
+    log.debug("pack tar %s from folder  %s with files " , tarfile, srcdir)
     log.debug( files)
     try:
         check_call([TAR, '-cf', tarfile] + files, cwd=srcdir, stdout=nullfd, preexec_fn=_noumask)
     except:
-        log.exception("Error unpacking tar file %s to %s", tarfile, srcdir)
+        log.exception("Error packing tar file %s to %s", tarfile, srcdir)
         raise
     nullfd.close()
+
 
 def unpackfile(filename, destdir):
     """Unpack a mar or exe into destdir"""
@@ -359,7 +364,7 @@ def packfile(filename, srcdir):
     elif filename.endswith(".exe"):
         return packexe(filename, srcdir)
     elif filename.endswith(".tar"):
-        return packtar(filename, destdir)
+        return tar_dir(filename, destdir)
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
@@ -811,6 +816,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
     basename = os.path.basename(filename)
     dirname = os.path.dirname(filename)
     stdout = tempfile.TemporaryFile()
+    log.debug("code resources are: %s", code_resources)
     command = ['codesign',
         '-s', signing_identity, '-fv',
         '--keychain', keydir,
@@ -861,7 +867,10 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, f
 #            pkg_tmpdir = tempfile.mkdtemp()
 #            os.rename(tmpdir, os.path.join(pkg_tmpdir, "%s.app" % options.product.title()))
 #            tmpdir = pkg_tmpdir
-        generateCodeResourcesFile(findfiles(tmpdir), code_resources)
+        #generateCodeResourcesFile(findfiles(tmpdir), code_resources)
+
+        #TODO: Can we just assume this is where the resources will be located? Should we pass the location in another way?
+        code_resources = tmpdir + '/' + product +".app/Contents/_CodeSignature/CodeResources"
 
         for macdir in finddirs(tmpdir):
             log.debug('Checking if we should sign %s', macdir)
@@ -891,7 +900,7 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, f
 
         # Repack it
         logs.append("Packing %s" % dstfile)
-        packtar(dstfile, tmpdir)
+        tar_dir(dstfile, tmpdir)
         return 1, 0, 1
     except:
         log.exception("Error signing %s", pkgfile)
@@ -901,38 +910,4 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, f
         shutil.rmtree(tmpdir)
         log.info("\n  ".join(logs))
 
-def generateCodeResourcesFile(files, output_file, template="CodeResources.template"):
-    """ Generate the XML rules for signing a mac package based on three
-    internal functions omit_file, optional_file and include_file """
-    plist = open(template, "r").readlines()
-    _omitted_dirs = [
-        'Contents/MacOS/extensions',
-        'Contents/MacOS/distribution',
-        'Contents/MacOS/updates',
-        ]
-    _omitted_files = [
-        'Contents/MacOS/active-update.xml',
-        'Contents/MacOS/mozilla.cfg',
-        'Contents/MacOS/updates.xml',
-        ]
-    filtered_files = [f for f in files
-        if not any([True for d in _omitted_dirs if d in f]) and \
-           not any([True for of in _omitted_files if of in f])]
-
-    for filename in filtered_files:
-        plist.append("<key>^%s$</key>\n" %
-            filename[filename.find('Contents/'):].lstrip("Contents/"))
-        plist.append("<true/>\n")
-    # Add specific rules for omitted files/dirs
-    for dirname in _omitted_dirs:
-        plist.append("<key>^%s/.*</key>" % dirname.lstrip("Contents/"))
-        plist.append("<dict>\n<key>omit</key>\n<true/>\n</dict>\n")
-
-    for filename in _omitted_files:
-        plist.append("<key>^%s$</key>" % filename.lstrip("Contents/"))
-        plist.append("<dict>\n<key>omit</key>\n<true/>\n</dict>\n")
-
-    # close the rules and plist dict
-    plist.append('</dict>\n</dict>\n</plist>\n')
-    open(output_file, "w").writelines(plist)
 

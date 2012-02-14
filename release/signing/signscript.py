@@ -73,15 +73,12 @@ if __name__ == '__main__':
         safe_unlink(tmpfile)
         mar_signfile(inputfile, tmpfile, options.mar_cmd, options.fake, passphrase)
     elif format_ == "dmg":
-        logging.debug(" We need to unpack inputfile %s here", inputfile)
         if not options.dmg_keydir:
             parser.error("dmg_keydir required when format is dmg")
         if not options.mac_id:
             parser.error("mac_id required when format is dmg")
-        if not options.code_resources:
-            parser.error("code_resources required when format is dmg")
         tmpfile = tmpfile 
         safe_unlink(tmpfile)
-        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.code_resources, product, options.fake, passphrase)
+        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, product, options.fake, passphrase)
 
     os.rename(tmpfile, destfile)

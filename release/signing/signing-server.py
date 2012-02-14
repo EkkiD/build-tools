@@ -188,7 +188,7 @@ class Signer(object):
     def signfile(self, filehash, filename, format_, product):
         assert not self.stopped
         e = Event()
-        item = (filehash, filename, format_,product,  e)
+        item = (filehash, filename, format_, product,  e)
         log.debug("Putting %s on the queue", item)
         self.queue.put(item)
         self._start_worker()

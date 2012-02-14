@@ -368,7 +368,7 @@ def packfile(filename, srcdir):
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
-def shouldSign(filename, platform='win', product='firefox'):
+def shouldSign(filename, platform='win32', product='firefox'):
     """Returns True if filename should be signed."""
     # These should already be signed by Microsoft.
     _dont_sign = [
@@ -379,12 +379,15 @@ def shouldSign(filename, platform='win', product='firefox'):
     ext = os.path.splitext(filename)[1]
     b = os.path.basename(filename)
     if platform == 'mac':
-        product = product + '.app'
+        product = product.title() + '.app'
         if b == product:
             return True
-    else:
+    elif platform in ('win32', 'win64'):
         if ext in ('.dll', '.exe') and not any(fnmatch.fnmatch(b, p) for p in _dont_sign):
             return True
+    else:
+        #We should never get here.
+        log.debug("Invalid Platform")
     return False
 
 def getChkFile(filename):
@@ -824,16 +827,6 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
         basename]
     try:
         check_call(command, cwd=dirname, stdout=stdout, stderr=STDOUT)
-        # should produce same result if we are on a 10.5/10.6 machine
-        if os.path.exists(os.path.join(filename, 'Contents/CodeResources')) and \
-           not os.path.isdir(os.path.join(filename, 'Contents/_CodeSignature')):
-            os.mkdir(os.path.join(filename, 'Contents/_CodeSignature'))
-            os.rename(
-                os.path.join(filename, 'Contents/CodeResources'),
-                os.path.join(filename, 'Contents/_CodeSignature/CodeResources'))
-            os.symlink(
-                os.path.join(filename, 'Contents/_CodeSignature/CodeResources'),
-                os.path.join(filename, 'Contents/CodeResources'))
     except:
         stdout.seek(0)
         data = stdout.read()
@@ -841,7 +834,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False)
         raise
 
 # Old code, does it work?
-def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, fake=False, passphrase=None):
+def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, product, fake=False, passphrase=None):
     """ Sign a mac `pkgfile` (installer dmg or mar) , putting results into `dstfile`.
 
     If `compressed` is True, then the contents of pkgfile are bz2 compressed
@@ -851,6 +844,8 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, f
     # Keep track of our output in a list here, and we can output everything
     # when we're done This is to avoid interleaving the output from
     # multiple processes.
+
+    #TODO: Is it even possible to do 'fake' signing?
     logs = []
     logs.append("Repacking %s to %s" % (pkgfile, dstfile))
 
@@ -860,43 +855,15 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, code_resources, product, f
         # Unpack it
         logs.append("Unpacking %s to %s" % (pkgfile, tmpdir))
         unpacktar(pkgfile, tmpdir)
-        # Fatten the mar contents into an app bundle for signing
-#        if compressed:
-#            for f in findfiles(tmpdir):
-#                bunzip2(f)
-#            pkg_tmpdir = tempfile.mkdtemp()
-#            os.rename(tmpdir, os.path.join(pkg_tmpdir, "%s.app" % options.product.title()))
-#            tmpdir = pkg_tmpdir
-        #generateCodeResourcesFile(findfiles(tmpdir), code_resources)
 
-        #TODO: Can we just assume this is where the resources will be located? Should we pass the location in another way?
-        code_resources = tmpdir + '/' + product +".app/Contents/_CodeSignature/CodeResources"
+        # Grab the code resources file.
+        code_resources = tmpdir + '/' + product.title() +".app/Contents/_CodeSignature/CodeResources"
 
         for macdir in finddirs(tmpdir):
             log.debug('Checking if we should sign %s', macdir)
-            if shouldSign(macdir, 'mac', product):
-            #if shouldSign(macdir, 'mac'):
+            if shouldSign(macdir, 'mac', product.title()):
                 log.debug('Signing %s', macdir)
                 dmg_signfile(macdir, keydir, mac_id, code_resources)
-
-
-        # Put everything back where it was, and add the newly created
-        # CodeResources artifacts to the update manifest
-#        for f in findfiles(tmpdir):
-#            updated = False
-#            if os.path.basename(f) == 'update.manifest':
-#                update_manifest = open("%s.out" % f, "w")
-#                update_manifest.write('add "Contents/CodeResources"\n')
-#                update_manifest.write('add "Contents/_CodeSignature/CodeResources"\n')
-#                update_manifest.write( open(f, "r", True).read() )
-#                update_manifest.close()
-#                shutil.copymode(f, "%s.out" % f)
-#                os.unlink(f)
-#                os.rename("%s.out" % f, f)
-#                updated = True
-#        log.debug("%s Successfully updated manifest", updated)
-#        log.debug("join %s.app", product)
-#        tmpdir = os.path.join(tmpdir, "%s.app" % product)
 
         # Repack it
         logs.append("Packing %s" % dstfile)

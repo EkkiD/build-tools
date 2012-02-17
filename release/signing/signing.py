@@ -815,32 +815,35 @@ def mar_signfile(inputfile, outputfile, mar_cmd, fake=False, passphrase=None):
         log.exception(data)
         raise
 
-def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False):
+def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False, passphrase=None):
+    """ Sign a mac .app folder
+    """
     basename = os.path.basename(filename)
     dirname = os.path.dirname(filename)
     stdout = tempfile.TemporaryFile()
-    log.debug("code resources are: %s", code_resources)
+
     command = ['codesign',
         '-s', signing_identity, '-fv',
         '--keychain', keydir,
         '--resource-rules', code_resources,
         basename]
     try:
+        #TODO: unlock the keychain?
+
         check_call(command, cwd=dirname, stdout=stdout, stderr=STDOUT)
+
+        #TODO:  lock the keychain
     except:
         stdout.seek(0)
         data = stdout.read()
         log.exception(data)
         raise
 
-# Old code, does it work?
 def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, product, fake=False, passphrase=None):
-    """ Sign a mac `pkgfile` (installer dmg or mar) , putting results into `dstfile`.
+    """ Sign a mac build, putting results into `dstfile`.
 
-    If `compressed` is True, then the contents of pkgfile are bz2 compressed
-    and should be decompressed before signing. All compressed files will
-    be de-compressed, signed as an App-Bundle, and subsequently repacked
-    into a mar so that we don't break the code signature. """
+        pkgfile must be a tar, which gets unpacked, signed, and repacked.
+    """
     # Keep track of our output in a list here, and we can output everything
     # when we're done This is to avoid interleaving the output from
     # multiple processes.
@@ -860,10 +863,10 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, product, fake=False, passp
         code_resources = tmpdir + '/' + product.title() +".app/Contents/_CodeSignature/CodeResources"
 
         for macdir in finddirs(tmpdir):
-            log.debug('Checking if we should sign %s', macdir)
+            logs.append('Checking if we should sign %s', macdir)
             if shouldSign(macdir, 'mac', product.title()):
-                log.debug('Signing %s', macdir)
-                dmg_signfile(macdir, keydir, mac_id, code_resources)
+                logs.append('Signing %s', macdir)
+                dmg_signfile(macdir, keydir, mac_id, code_resources, passphrase)
 
         # Repack it
         logs.append("Packing %s" % dstfile)

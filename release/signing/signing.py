@@ -368,7 +368,7 @@ def packfile(filename, srcdir):
     else:
         raise ValueError("Unknown file type: %s" % filename)
 
-def shouldSign(filename, platform='win32', product='firefox'):
+def shouldSign(filename, platform='win32'):
     """Returns True if filename should be signed."""
     # These should already be signed by Microsoft.
     _dont_sign = [
@@ -379,8 +379,7 @@ def shouldSign(filename, platform='win32', product='firefox'):
     ext = os.path.splitext(filename)[1]
     b = os.path.basename(filename)
     if platform == 'mac':
-        product = product.title() + '.app'
-        if b == product:
+        if b.endswith('.app'):
             return True
     elif platform in ('win32', 'win64'):
         if ext in ('.dll', '.exe') and not any(fnmatch.fnmatch(b, p) for p in _dont_sign):
@@ -479,7 +478,6 @@ def signfile(filename, keydir, fake=False, passphrase=None):
 def getfile(baseurl, filehash, format_):
     url = "%s/sign/%s/%s" % (baseurl, format_, filehash)
     log.debug("%s: GET %s", filehash, url)
-    log.debug("GETFILE")
     r = urllib2.Request(url)
     return urllib2.urlopen(r)
 
@@ -598,9 +596,7 @@ def remote_signfile(options, url, filename, fmt, token, dest=None):
                     nonce = open(options.noncefile, 'rb').read()
                 except IOError:
                     nonce = ""
-                if options.product == None:
-                    log.debug("OPTIONS.PRODUCT IS NONE")
-                req = uploadfile(url, filename, fmt, token, nonce=nonce, product=options.product)
+                req = uploadfile(url, filename, fmt, token, nonce=nonce)
                 nonce = req.info()['X-Nonce']
                 open(options.noncefile, 'wb').write(nonce)
             except urllib2.HTTPError, e:
@@ -701,19 +697,14 @@ def buildValidatingOpener(ca_certs):
     opener = urllib2.build_opener(https_handler)
     urllib2.install_opener(opener)
 
-def uploadfile(baseurl, filename, format_, token, nonce, product):
+def uploadfile(baseurl, filename, format_, token, nonce):
     """Uploads file (given by `filename`) to server at `baseurl`.
 
     `sesson_key` and `nonce` are string values that get passed as POST
     parameters.
     """
-
-    log.debug("UPLOADFILE")
-
     from poster.encode import multipart_encode
     filehash = sha1sum(filename)
-    if product == None:
-        log.debug("PRODUCT IS NONE")
 
     try:
         fp = open(filename, 'rb')
@@ -724,7 +715,6 @@ def uploadfile(baseurl, filename, format_, token, nonce, product):
                 'filename': os.path.basename(filename),
                 'token': token,
                 'nonce': nonce,
-                'product': product,
                 }
 
         datagen, headers = multipart_encode(params)
@@ -830,6 +820,9 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False,
     try:
         #TODO: unlock the keychain?
 
+        log.debug("COmmand: ")
+        log.debug(command)
+
         check_call(command, cwd=dirname, stdout=stdout, stderr=STDOUT)
 
         #TODO:  lock the keychain
@@ -839,9 +832,8 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False,
         log.exception(data)
         raise
 
-def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, product, fake=False, passphrase=None):
+def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, fake=False, passphrase=None):
     """ Sign a mac build, putting results into `dstfile`.
-
         pkgfile must be a tar, which gets unpacked, signed, and repacked.
     """
     # Keep track of our output in a list here, and we can output everything
@@ -859,14 +851,14 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, product, fake=False, passp
         logs.append("Unpacking %s to %s" % (pkgfile, tmpdir))
         unpacktar(pkgfile, tmpdir)
 
-        # Grab the code resources file.
-        code_resources = tmpdir + '/' + product.title() +".app/Contents/_CodeSignature/CodeResources"
-
-        for macdir in finddirs(tmpdir):
-            logs.append('Checking if we should sign %s', macdir)
-            if shouldSign(macdir, 'mac', product.title()):
-                logs.append('Signing %s', macdir)
-                dmg_signfile(macdir, keydir, mac_id, code_resources, passphrase)
+        for macdir in os.listdir(tmpdir):
+            macdir = os.path.join(tmpdir, macdir)
+            log.debug('Checking if we should sign %s', macdir)
+            if shouldSign(macdir, 'mac'):
+                log.debug('Signing %s', macdir)
+                # Grab the code resources file. Need to find the filename
+                code_resources =  macdir + "/Contents/_CodeSignature/CodeResources"
+                dmg_signfile(macdir, keydir, mac_id, code_resources)
 
         # Repack it
         logs.append("Packing %s" % dstfile)

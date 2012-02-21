@@ -75,8 +75,6 @@ def main():
             help="command to re-sign nss libraries, if required")
     parser.add_option("--cachedir", dest="cachedir",
             help="local cache directory")
-    parser.add_option("--product", dest="product",
-            help="product name")
     # TODO: Concurrency?
     # TODO: Different certs per server?
 
@@ -98,9 +96,6 @@ def main():
 
     if not options.noncefile:
         parser.error("nonce file is required")
-
-    if not options.product:
-        parser.error("product is required")
 
     # Covert nsscmd to win32 path if required
     if sys.platform == 'win32' and options.nsscmd:

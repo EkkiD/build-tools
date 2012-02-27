@@ -42,6 +42,7 @@ if __name__ == '__main__':
 
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(message)s")
 
+
     if len(args) != 4:
         parser.error("Incorrect number of arguments")
 
@@ -77,7 +78,6 @@ if __name__ == '__main__':
             parser.error("dmg_keydir required when format is dmg")
         if not options.mac_id:
             parser.error("mac_id required when format is dmg")
-        tmpfile = tmpfile 
         safe_unlink(tmpfile)
         dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.fake, passphrase)
 

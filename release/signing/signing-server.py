@@ -224,7 +224,6 @@ class Signer(object):
                 # Fall on our sword if we're too old
                 if jobs >= max_jobs:
                     break
-
                 try:
                     item = self.queue.get(block=False)
                     if not item:

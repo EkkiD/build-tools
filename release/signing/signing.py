@@ -328,15 +328,15 @@ def unpacktar(tarfile, destdir):
 
 def tar_dir(tarfile, srcdir):
     """ Pack a tar file using all the files in the given srcdir """
-    files = [f[len(srcdir)+1:] for f in findfiles(srcdir)]
+    files = os.listdir(srcdir)
     packtar(tarfile, files, srcdir)
     
 def packtar(tarfile, files, srcdir):
     """ Pack the given files into a tar, setting cwd = srcdir"""
     nullfd = open(os.devnull, "w")
     tarfile = cygpath(os.path.abspath(tarfile))
-    log.debug("pack tar %s from folder  %s with files " , tarfile, srcdir)
-    log.debug( files)
+    log.info("pack tar %s from folder  %s with files " , tarfile, srcdir)
+    log.info( files)
     try:
         check_call([TAR, '-cf', tarfile] + files, cwd=srcdir, stdout=nullfd, preexec_fn=_noumask)
     except:
@@ -386,7 +386,7 @@ def shouldSign(filename, platform='win32'):
             return True
     else:
         #We should never get here.
-        log.debug("Invalid Platform")
+        log.debug("Invalid Platform: %s", platform)
     return False
 
 def getChkFile(filename):
@@ -805,27 +805,61 @@ def mar_signfile(inputfile, outputfile, mar_cmd, fake=False, passphrase=None):
         log.exception(data)
         raise
 
-def dmg_signfile(filename, keydir, signing_identity, code_resources, fake=False, passphrase=None):
+def dmg_signfile(filename, keydir, signing_identity, code_resources, lockfile, fake=False, passphrase=None):
     """ Sign a mac .app folder
     """
+    from mercurial import lock, error
+    import pexpect
+
     basename = os.path.basename(filename)
     dirname = os.path.dirname(filename)
     stdout = tempfile.TemporaryFile()
 
-    command = ['codesign',
+    sign_command = ['codesign',
         '-s', signing_identity, '-fv',
         '--keychain', keydir,
         '--resource-rules', code_resources,
         basename]
+
+    # pexpect requires a string as input
+    unlock_command = 'security unlock-keychain '+keydir
+    lock_command = ['security', 'lock-keychain', keydir]
     try:
-        #TODO: unlock the keychain?
+        sign_lock = None
+        try: 
+            # Acquire a lock for the signing command, to ensure we don't have a 
+            # race condition where one process locks the keychain immediately after another
+            # unlocks it.
+            log.debug("Try to acquire %s", lockfile)
+            sign_lock = lock.lock(lockfile, timeout=300)
 
-        log.debug("COmmand: ")
-        log.debug(command)
+            # Unlock the keychain so that we do not get a user-interaction prompt to use
+            # the keychain for signing. This operation requires a password.
+            child = pexpect.spawn (unlock_command)
+            child.expect('password to unlock .*')
+            child.sendline(passphrase)
+            # read output until child exits
+            child.read()
+            child.close()
+            if child.exitstatus != 0:
+                raise ValueError("keychain unlock failed")
 
-        check_call(command, cwd=dirname, stdout=stdout, stderr=STDOUT)
+            # Execute the signing command
+            check_call(sign_command, cwd=dirname, stdout=stdout, stderr=STDOUT)
 
-        #TODO:  lock the keychain
+        except error.LockHeld:
+            # timed out acquiring lock, give an error
+            log.exception("Timeout acquiring lock  %s for codesign, is something broken?", lockfile)
+            raise
+        finally: 
+            # Lock the keychain again, no matter what happens
+            # This command does not require a password
+            check_call(lock_command)
+
+            # Release the lock, if it was acquired
+            if sign_lock:
+                sign_lock.release()
+                log.debug("Release %s", lockfile)
     except:
         stdout.seek(0)
         data = stdout.read()
@@ -845,6 +879,7 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, fake=False, passphrase=Non
     logs.append("Repacking %s to %s" % (pkgfile, dstfile))
 
     tmpdir = tempfile.mkdtemp()
+    pkgdir = os.path.dirname(pkgfile)
     filename = os.path.basename(pkgfile)
     try:
         # Unpack it
@@ -856,14 +891,16 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, fake=False, passphrase=Non
             log.debug('Checking if we should sign %s', macdir)
             if shouldSign(macdir, 'mac'):
                 log.debug('Signing %s', macdir)
+
                 # Grab the code resources file. Need to find the filename
                 code_resources =  macdir + "/Contents/_CodeSignature/CodeResources"
-                dmg_signfile(macdir, keydir, mac_id, code_resources)
+                lockfile = os.path.join(pkgdir, '.lock')
+
+                dmg_signfile(macdir, keydir, mac_id, code_resources, lockfile, passphrase=passphrase)
 
         # Repack it
         logs.append("Packing %s" % dstfile)
         tar_dir(dstfile, tmpdir)
-        return 1, 0, 1
     except:
         log.exception("Error signing %s", pkgfile)
         return False

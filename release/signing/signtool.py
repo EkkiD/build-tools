@@ -148,10 +148,12 @@ def main():
 
         log.debug("doing %s signing", fmt)
         files = []
+        # We want to package the ".app" file in a tar for mac signing.
         if fmt == "dmg":
             for fd in args:
-                packtar_app(fd+'.tar', [fd])
+                packtar(fd+'.tar', [fd], os.getcwd())
                 files.append(fd+'.tar')
+        # For other platforms we sign all of the files individually.
         else:
             files = find_files(options, args)
 
@@ -182,11 +184,6 @@ def main():
                 unpacktar(fd+'.tar', os.getcwd())
                 os.unlink(fd+'.tar')
                 
-
-def packtar_app(tarfile, files):
-    """ Pack a tar with the list of files, in the current dir"""
-    packtar(tarfile, files, os.getcwd())
-
 
 if __name__ == '__main__':
     main()

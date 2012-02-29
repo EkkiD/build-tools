@@ -10,7 +10,6 @@ site.addsitedir(os.path.join(os.path.dirname(__file__), "../../lib/python"))
 
 import logging
 from signing import remote_signfile, find_files, buildValidatingOpener, packtar, unpacktar
-from subprocess import check_call
 log = logging.getLogger(__name__)
 
 import pefile

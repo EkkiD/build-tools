@@ -850,7 +850,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, lockfile, f
             # Execute the signing command
             check_call(sign_command, cwd=dirname, stdout=stdout, stderr=STDOUT)
 
-        except TimeOutError as error:
+        except TimeOutError, error:
             # timed out acquiring lock, give an error
             log.exception("Timeout acquiring lock  %s for codesign, is something broken? ", lockfile, error)
             raise

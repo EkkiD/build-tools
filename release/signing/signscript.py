@@ -40,7 +40,7 @@ if __name__ == '__main__':
         for option, value in config.items('signscript'):
             options.ensure_value(option, value)
 
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(message)s")
+    logging.basicConfig(level=options.loglevel, format="%(asctime)s - %(message)s")
 
 
     if len(args) != 4:

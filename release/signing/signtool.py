@@ -157,7 +157,7 @@ def main():
             files = find_files(options, args)
 
         for f in files:
-            log.debug("%s",f)
+            log.debug("%s", f)
             log.debug("checking %s for signature...", f)
             if fmt == 'signcode' and is_authenticode_signed(f):
                 log.info("Skipping %s because it looks like it's already signed", f)

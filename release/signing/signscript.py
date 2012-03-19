@@ -24,7 +24,7 @@ if __name__ == '__main__':
             help="where the gpg keyrings are")
     parser.add_option("--mac_id", dest="mac_id",
             help="the mac signing identity")
-    parser.add_option("--dmgkeydir", dest="dmg_keydir",
+    parser.add_option("--dmgkeychain", dest="dmg_keychain",
             help="the mac signing keydir")
     parser.add_option("--fake", dest="fake", action="store_true",
             help="do fake signing")
@@ -74,11 +74,11 @@ if __name__ == '__main__':
         safe_unlink(tmpfile)
         mar_signfile(inputfile, tmpfile, options.mar_cmd, options.fake, passphrase)
     elif format_ == "dmg":
-        if not options.dmg_keydir:
-            parser.error("dmg_keydir required when format is dmg")
+        if not options.dmg_keychain:
+            parser.error("dmg_keychain required when format is dmg")
         if not options.mac_id:
             parser.error("mac_id required when format is dmg")
         safe_unlink(tmpfile)
-        dmg_signpackage(inputfile, tmpfile, options.dmg_keydir, options.mac_id, options.fake, passphrase)
+        dmg_signpackage(inputfile, tmpfile, options.dmg_keychain, options.mac_id, options.fake, passphrase)
 
     os.rename(tmpfile, destfile)

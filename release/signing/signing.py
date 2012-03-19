@@ -805,7 +805,7 @@ def mar_signfile(inputfile, outputfile, mar_cmd, fake=False, passphrase=None):
         log.exception(data)
         raise
 
-def dmg_signfile(filename, keydir, signing_identity, code_resources, lockfile, fake=False, passphrase=None):
+def dmg_signfile(filename, keychain, signing_identity, code_resources, lockfile, fake=False, passphrase=None):
     """ Sign a mac .app folder
     """
     from flufl.lock import Lock, AlreadyLockedError, TimeOutError, NotLockedError
@@ -818,13 +818,13 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, lockfile, f
 
     sign_command = ['codesign',
         '-s', signing_identity, '-fv',
-        '--keychain', keydir,
+        '--keychain', keychain,
         '--resource-rules', code_resources,
         basename]
 
     # pexpect requires a string as input
-    unlock_command = 'security unlock-keychain '+keydir
-    lock_command = ['security', 'lock-keychain', keydir]
+    unlock_command = 'security unlock-keychain '+keychain
+    lock_command = ['security', 'lock-keychain', keychain]
     try:
         sign_lock = None
         try: 
@@ -877,7 +877,7 @@ def dmg_signfile(filename, keydir, signing_identity, code_resources, lockfile, f
         log.exception(data)
         raise
 
-def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, fake=False, passphrase=None):
+def dmg_signpackage(pkgfile, dstfile, keychain, mac_id, fake=False, passphrase=None):
     """ Sign a mac build, putting results into `dstfile`.
         pkgfile must be a tar, which gets unpacked, signed, and repacked.
     """
@@ -907,7 +907,7 @@ def dmg_signpackage(pkgfile, dstfile, keydir, mac_id, fake=False, passphrase=Non
                 code_resources =  macdir + "/Contents/_CodeSignature/CodeResources"
                 lockfile = os.path.join(pkgdir, '.lock')
 
-                dmg_signfile(macdir, keydir, mac_id, code_resources, lockfile, passphrase=passphrase)
+                dmg_signfile(macdir, keychain, mac_id, code_resources, lockfile, passphrase=passphrase)
 
         # Repack it
         logs.append("Packing %s" % dstfile)
